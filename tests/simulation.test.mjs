@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Simulation, settingsFor, speciesDefaults, validateSettings, PRESETS, DT } from '../simulation.js';
+import { Simulation, settingsFor, speciesDefaults, validateSettings, PRESETS, DT, LIMITS, ALGORITHM } from '../simulation.js';
 
 const advance=(sim,steps)=>{for(let i=0;i<steps;i++)sim.step();};
 function pairWorld(overrides={}) {
@@ -23,6 +23,9 @@ test('seeded reactions, headings, bonds and saved continuations are deterministi
   assert.deepEqual(a.snapshot(),b.snapshot());
   assert.ok(a.reactions>0);
   const c=Simulation.restore(JSON.parse(JSON.stringify(a.snapshot())));
+  assert.equal(a.snapshot().format,'protoform-experiment');
+  const oldFormat=structuredClone(a.snapshot());oldFormat.format='previous-experiment';
+  assert.deepEqual(Simulation.restore(oldFormat).snapshot(),a.snapshot());
   advance(a,180);advance(c,180);
   assert.deepEqual(a.snapshot(),c.snapshot());assert.deepEqual(a.stats(),c.stats());
   assert.equal(a.stats().time,360*DT);
@@ -153,10 +156,10 @@ test('malformed settings and snapshots reject bad species, matrices, fuel and to
   const zero=structuredClone(base.settings);zero.species.forEach(item=>item.abundance=0);assert.throws(()=>validateSettings(zero));
 });
 
-test('v1 saves migrate to editable species and v2 continuation data',()=>{
+test('v1 saves migrate to editable species and v3 continuation data',()=>{
   const sim=new Simulation(settingsFor('soup',200)),data=sim.snapshot();data.version=1;
   data.settings={preset:'soup',count:200,seed:42,temperature:.35,attraction:1.2,bondStrength:1.4,damping:.7,matrix:[.65,.85,-.25,.85,.25,.15,-.25,.15,-.1],valence:[3,2,1]};
-  const restored=Simulation.restore(data);assert.equal(restored.snapshot().version,2);assert.deepEqual(restored.settings.species.map(item=>item.valence),[3,2,1]);
+  const restored=Simulation.restore(data);assert.equal(restored.snapshot().version,3);assert.equal(restored.snapshot().algorithm,ALGORITHM);assert.deepEqual(restored.settings.species.map(item=>item.valence),[3,2,1]);
   assert.ok(restored.settings.species.every(item=>item.mass===1));advance(restored,20);assert.ok(restored.positions.every(Number.isFinite));
 });
 
@@ -167,11 +170,11 @@ test('v1 paused edits migrate stale bonds safely while v2 and duplicate bonds st
   data.bonds=[[0,1],[0,2],[0,3]];
   const restored=Simulation.restore(data);
   assert.deepEqual(Array.from(restored.bonds.values()),[[0,2]]);
-  assert.deepEqual(restored.migration,{fromVersion:1,prunedBonds:2});
+  assert.deepEqual(restored.migration,{fromVersion:1,prunedBonds:2,algorithmChanged:true});
   assert.equal(restored.bondsFormed,3);assert.equal(restored.bondsBroken,2);
   assert.deepEqual(Simulation.restore(restored.snapshot()).snapshot(),restored.snapshot());
   const duplicate=structuredClone(data);duplicate.bonds=[[0,1],[0,1]];assert.throws(()=>Simulation.restore(duplicate),/duplicate/);
-  const invalidV2=restored.snapshot();invalidV2.bonds=[[0,1]];assert.throws(()=>Simulation.restore(invalidV2),/binding affinity/);
+  const invalidV2=restored.snapshot();invalidV2.version=2;delete invalidV2.algorithm;invalidV2.bonds=[[0,1]];assert.throws(()=>Simulation.restore(invalidV2),/binding affinity/);
 });
 
 test('fast states after a valid mass edit still save and restore; overflow is rejected atomically',()=>{
@@ -198,4 +201,133 @@ test('6,000 particles use valid typed indices and export a complete state',()=>{
   const sim=new Simulation({...settingsFor('gas',6000,1),boxSize:120});sim.step();
   assert.equal(sim.types.length,6000);assert.equal(sim.stats().speciesCounts.reduce((a,b)=>a+b,0),6000);
   assert.ok(sim.positions.every(Number.isFinite));assert.equal(Simulation.restore(sim.snapshot()).positions.length,18000);
+});
+
+// Deliberately independent all-pairs reference: no grid, pair tables or cache data.
+function referenceForces(sim) {
+  const s=sim.settings,p=sim.positions,forces=new Float64Array(p.length),m=s.species.length;
+  for(let i=0;i<s.count;i++)for(let j=i+1;j<s.count;j++) {
+    const a=i*3,b=j*3,dx=p[b]-p[a],dy=p[b+1]-p[a+1],dz=p[b+2]-p[a+2],r=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    const sa=s.species[sim.types[i]],sb=s.species[sim.types[j]],contact=sa.radius+sb.radius;
+    let force=r<contact?-s.repulsion*(1-r/contact):r<s.interactionRadius?s.matrix[sim.types[i]*m+sim.types[j]]*s.attraction*2*Math.sin(Math.PI*(r-contact)/Math.max(.01,s.interactionRadius-contact)):0;
+    if(s.chargeStrength&&sa.charge&&sb.charge&&r<s.interactionRadius) {
+      const softR=Math.max(contact*.5,r);
+      force-=s.chargeStrength*sa.charge*sb.charge*Math.exp(-softR/s.screeningLength)*(1/(softR*softR)+1/(s.screeningLength*softR))*(1-r/s.interactionRadius)**2;
+    }
+    force=Math.max(-150,Math.min(150,force));
+    const inverse=r>.0001?1/r:0,components=[r>.0001?force*dx*inverse:force,force*dy*inverse,force*dz*inverse];
+    for(let k=0;k<3;k++){forces[a+k]+=components[k];forces[b+k]-=components[k];}
+  }
+  return forces;
+}
+
+test('contiguous neighbor cells match independent all-pairs forces at boundaries and mixed ranges',()=>{
+  for(const controls of [
+    {interactionRadius:2,repulsion:30,attraction:0,chargeStrength:0},
+    {interactionRadius:6,repulsion:30,attraction:2,chargeStrength:3},
+    {interactionRadius:16,repulsion:0,attraction:2,chargeStrength:0},
+    {interactionRadius:2,repulsion:0,attraction:0,chargeStrength:3},
+  ]) {
+    const settings={...settingsFor('soup',160,31),...controls,boxSize:24,temperature:0,damping:0,bondStrength:0,bondFormation:0};
+    settings.species=settings.species.map((item,i)=>({...item,radius:[1.5,.2,.7][i],charge:i-1,turnRate:0}));
+    const sim=new Simulation(settings);
+    // Cell boundaries, opposite wall regions, an overlap and an exact cutoff.
+    const edge=sim.gridSize>1?-12+sim.cellSize:9;
+    sim.positions.set([edge-.01,0,0,edge+.01,0,0,-10,0,0,10,0,0,0,0,0,0,0,0]);
+    sim.types[4]=0;sim.types[5]=1;
+    sim.velocities.fill(0);
+    const expected=referenceForces(sim);
+    sim.step();
+    for(let i=0;i<expected.length;i++)assert.ok(Math.abs(sim.forces[i]-expected[i])<=2e-5*Math.max(1,Math.abs(expected[i])),`force ${i}: ${sim.forces[i]} vs ${expected[i]}`);
+  }
+});
+
+test('active ranges discard unused mechanisms and retain overlap suppression without repulsion',()=>{
+  const inert=pairWorld({interactionRadius:16,reactionRadius:12});
+  assert.equal(inert.cutoff,0);
+  inert.configure({repulsion:10});assert.equal(inert.cutoff,1.3);
+  inert.configure({repulsion:0,reactions:[{name:'Decay',from:0,to:1,catalyst:-1,rate:1,activationEnergy:0,energyCost:0}]});
+  assert.equal(inert.cutoff,0,'spontaneous reactions do not need neighbor searches');
+  inert.configure({reactions:[{name:'Catalysis',from:0,to:1,catalyst:2,rate:1,activationEnergy:0,energyCost:0}]});
+  assert.equal(inert.cutoff,12);
+  inert.configure({reactions:[]});assert.equal(inert.cutoff,0);
+  const s=settingsFor('gas',100);s.species[0].radius=1.5;s.species[1].radius=1.5;
+  const overlap=pairWorld({species:s.species,attraction:2,repulsion:0,matrix:[0,1,0,1,0,0,0,0,0]});
+  overlap.step();assert.equal(overlap.velocities[0],0);assert.equal(overlap.velocities[3],0);
+  const reactive=pairWorld({reactions:[{name:'Catalysis',from:0,to:2,catalyst:1,rate:20,activationEnergy:0,energyCost:0}],reactionRadius:12});
+  reactive.positions[3]=9;advance(reactive,120);assert.equal(reactive.types[0],2,'catalysis beyond inactive force ranges remains active');
+});
+
+test('cell bounding-box pruning retains near-cutoff pairs across sparse-world faces, edges and corners',()=>{
+  for(const dimensions of [1,2,3]) {
+    const settings={...settingsFor('gas',100,9),boxSize:LIMITS.boxSize,temperature:0,damping:0};
+    settings.species=settings.species.map(item=>({...item,radius:.65,turnRate:0}));
+    const sim=new Simulation(settings),face=-settings.boxSize/2+2*sim.cellSize;
+    sim.velocities.fill(0);
+    for(let i=0;i<100;i++)sim.positions.set([170+(i%5)*24,170+(Math.floor(i/5)%5)*24,170+Math.floor(i/25)*24],i*3);
+    for(let axis=0;axis<3;axis++) {
+      const offset=axis<dimensions?.64995/Math.sqrt(dimensions):0;
+      sim.positions[axis]=face-offset;sim.positions[3+axis]=face+offset;
+    }
+    const expected=referenceForces(sim);
+    assert.ok(expected[0]<0,'the two particles are just inside collision range');
+    sim.step();
+    for(let axis=0;axis<3;axis++)assert.ok(Math.abs(sim.forces[axis]-expected[axis])<1e-7,`missed face/edge/corner component ${dimensions}/${axis}`);
+  }
+});
+
+test('256 species and catalyst words beyond eight and 32 bits preserve high product IDs',()=>{
+  const species=Array.from({length:LIMITS.species},(_,i)=>({...speciesDefaults(i),valence:0,turnRate:0,abundance:i===255?1:0}));
+  const settings={species,matrix:Array(LIMITS.species**2).fill(0)};
+  const initial=new Simulation({...settingsFor('gas',100),...settings});
+  assert.ok(initial.types.every(type=>type===255));
+  assert.equal(initial.stats().speciesCounts[255],100);
+  assert.equal(new Set(species.map(item=>item.color)).size,LIMITS.species,'palette gives every supported species a fixed distinct color');
+  const decoys=Array.from({length:64},(_,i)=>({name:`Other catalyst ${i}`,from:129,to:130,catalyst:i,rate:1,activationEnergy:0,energyCost:0}));
+  const reaction={name:'High ID conversion',from:128,to:255,catalyst:200,rate:20,activationEnergy:0,energyCost:0};
+  const make=neighbor=>{
+    const sim=pairWorld({...settings,reactions:[...decoys,reaction]});
+    sim.types[0]=128;sim.types[1]=neighbor;
+    return sim;
+  };
+  const absent=make(0);advance(absent,120);assert.equal(absent.types[0],128,'a set bit in a different word is not the catalyst');
+  const present=make(200);advance(present,120);assert.equal(present.types[0],255);assert.equal(present.reactions,1);
+  const saved=Simulation.restore(present.snapshot());advance(present,30);advance(saved,30);assert.deepEqual(saved.snapshot(),present.snapshot());
+});
+
+test('1024 indexed reaction rules preserve source matching and configuration invalidates caches',()=>{
+  const settings=settingsFor('gas',100),rule={name:'Conversion',from:0,to:1,catalyst:-1,rate:1,activationEnergy:0,energyCost:0};
+  settings.reactions=Array.from({length:LIMITS.reactions},(_,i)=>({...rule,from:i===0?0:2,to:i===0?1:0}));
+  const sim=pairWorld(settings);sim.types.fill(1);sim.types[0]=0;advance(sim,600);
+  assert.equal(sim.types[0],1);assert.equal(sim.reactions,1);
+  const before=sim.stats();
+  sim.configure({reactions:[{...rule,from:1,to:2,rate:20}],temperature:2,damping:1});advance(sim,120);
+  assert.equal(sim.stats().speciesCounts[2],100);assert.ok(sim.stats().energy>0);
+  assert.equal(before.speciesCounts[1],100,'returned stats remain stable across later scratch reuse');
+});
+
+test('50,000 particles remain bounded in memory in the largest sparse world and round trip',()=>{
+  const sim=new Simulation({...settingsFor('gas',LIMITS.particles,10),boxSize:LIMITS.boxSize});
+  assert.ok(sim.cellCounts.length<sim.settings.count*3);
+  sim.step();
+  assert.equal(sim.stats().speciesCounts.reduce((sum,count)=>sum+count,0),LIMITS.particles);
+  assert.ok(sim.positions.every(Number.isFinite));
+  const restored=Simulation.restore(sim.snapshot());
+  assert.equal(restored.positions.length,LIMITS.particles*3);
+  assert.deepEqual(restored.snapshot(),sim.snapshot());
+});
+
+test('v2 states migrate losslessly while declaring the new continuation algorithm',()=>{
+  const sim=new Simulation(settingsFor('chains',200,42));advance(sim,120);
+  assert.ok(sim.bonds.size>0);
+  assert.equal(sim.topologyVersion,sim.bondsFormed+sim.bondsBroken);
+  const snapshot=sim.snapshot(),v2=structuredClone(snapshot);v2.version=2;delete v2.algorithm;
+  const restored=Simulation.restore(v2);
+  assert.deepEqual(restored.snapshot(),snapshot);
+  assert.deepEqual(restored.migration,{fromVersion:2,prunedBonds:0,algorithmChanged:true});
+  const foreign=structuredClone(snapshot);foreign.algorithm='unknown';assert.throws(()=>Simulation.restore(foreign),/algorithm/);
+  const oldVersion=sim.topologyVersion;
+  sim.configure({species:sim.settings.species.map(item=>({...item,valence:0}))});
+  assert.ok(sim.topologyVersion>oldVersion);assert.equal(sim.topologyVersion,sim.bondsFormed+sim.bondsBroken);
+  assert.equal(sim.bonds.size,0);
 });

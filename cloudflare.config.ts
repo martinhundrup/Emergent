@@ -2,13 +2,13 @@
 export default {
   accountId: '68555cfc43ca5a5579ad49a3e7060711',
   worker: {
-    name: 'emergent',
+    name: 'protoform-ing',
     compatibilityDate: '2026-10-16',
     workersDev: false,
     assets: { htmlHandling: 'auto-trailing-slash', notFoundHandling: 'single-page-application' },
     triggers: [
-      { type: 'fetch', pattern: 'martinhundrup.com/emergent', zone: 'martinhundrup.com' },
-      { type: 'fetch', pattern: 'martinhundrup.com/emergent/*', zone: 'martinhundrup.com' },
+      { type: 'fetch', pattern: 'martinhundrup.com/protoform.ing', zone: 'martinhundrup.com' },
+      { type: 'fetch', pattern: 'martinhundrup.com/protoform.ing/*', zone: 'martinhundrup.com' },
     ],
   },
 };

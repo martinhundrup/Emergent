@@ -1,0 +1,741 @@
+{
+  "environment": {
+    "node": "v22.23.3",
+    "v8": "12.4.254.21-node.57",
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) Ultra 7 265K",
+    "logicalCpus": 20
+  },
+  "methodology": {
+    "seed": 42,
+    "warmupSteps": 60,
+    "measuredSteps": 120,
+    "phaseIterations": 120,
+    "dt": 0.016666666666666666,
+    "units": "milliseconds",
+    "note": "Fixed initial seed, evolving state; stats and preparation measured at final tick 180. CPU only. No GPU, worker transport, UI, or long-run clustering. Species control changes only names/colors/labels, with identical physical properties and pair affinities. Default cases use original preset chemistry."
+  },
+  "results": [
+    {
+      "name": "soup-1200-fixed-box",
+      "density": "fixed-box",
+      "particles": 1200,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 1034,
+      "candidatePairs": 62242,
+      "inCutoffPairs": 22238,
+      "stepMs": {
+        "mean": 1.2795,
+        "median": 1.2901,
+        "p95": 1.3736
+      },
+      "statsMs": {
+        "mean": 0.0391,
+        "median": 0.0368,
+        "p95": 0.0502
+      },
+      "packMs": {
+        "mean": 0.0261,
+        "median": 0.0214,
+        "p95": 0.0489
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.0714,
+        "median": 0.07,
+        "p95": 0.0731
+      },
+      "appearanceClusterMs": {
+        "mean": 0.085,
+        "median": 0.0808,
+        "p95": 0.1112
+      },
+      "frameBytes": 24536,
+      "uploadedGeometryBytes": 340176
+    },
+    {
+      "name": "soup-3000-fixed-box",
+      "density": "fixed-box",
+      "particles": 3000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 2619,
+      "candidatePairs": 472959,
+      "inCutoffPairs": 159525,
+      "stepMs": {
+        "mean": 6.8007,
+        "median": 7.0054,
+        "p95": 7.2161
+      },
+      "statsMs": {
+        "mean": 0.1203,
+        "median": 0.1151,
+        "p95": 0.1371
+      },
+      "packMs": {
+        "mean": 0.0553,
+        "median": 0.0428,
+        "p95": 0.0996
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.1941,
+        "median": 0.1902,
+        "p95": 0.22
+      },
+      "appearanceClusterMs": {
+        "mean": 0.2111,
+        "median": 0.2065,
+        "p95": 0.2404
+      },
+      "frameBytes": 61476,
+      "uploadedGeometryBytes": 859416
+    },
+    {
+      "name": "soup-3000-constant",
+      "density": "constant",
+      "particles": 3000,
+      "species": 3,
+      "boxSize": 65.146,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 10,
+      "bonds": 2636,
+      "candidatePairs": 205116,
+      "inCutoffPairs": 54025,
+      "stepMs": {
+        "mean": 3.5298,
+        "median": 3.5412,
+        "p95": 3.7142
+      },
+      "statsMs": {
+        "mean": 0.1102,
+        "median": 0.1078,
+        "p95": 0.1276
+      },
+      "packMs": {
+        "mean": 0.0715,
+        "median": 0.064,
+        "p95": 0.1336
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.1967,
+        "median": 0.1929,
+        "p95": 0.2113
+      },
+      "appearanceClusterMs": {
+        "mean": 0.2156,
+        "median": 0.2082,
+        "p95": 0.259
+      },
+      "frameBytes": 61544,
+      "uploadedGeometryBytes": 863904
+    },
+    {
+      "name": "soup-6000-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 4418,
+      "candidatePairs": 2023243,
+      "inCutoffPairs": 1382095,
+      "stepMs": {
+        "mean": 39.9527,
+        "median": 41.9042,
+        "p95": 49.0744
+      },
+      "statsMs": {
+        "mean": 0.2841,
+        "median": 0.2813,
+        "p95": 0.2998
+      },
+      "packMs": {
+        "mean": 0.1437,
+        "median": 0.122,
+        "p95": 0.3522
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.344,
+        "median": 0.3395,
+        "p95": 0.3795
+      },
+      "appearanceClusterMs": {
+        "mean": 0.3845,
+        "median": 0.3778,
+        "p95": 0.4202
+      },
+      "frameBytes": 119672,
+      "uploadedGeometryBytes": 1502352
+    },
+    {
+      "name": "soup-6000-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 5187,
+      "candidatePairs": 384986,
+      "inCutoffPairs": 106945,
+      "stepMs": {
+        "mean": 7.4281,
+        "median": 7.4009,
+        "p95": 8.2968
+      },
+      "statsMs": {
+        "mean": 0.243,
+        "median": 0.2413,
+        "p95": 0.2595
+      },
+      "packMs": {
+        "mean": 0.1746,
+        "median": 0.1448,
+        "p95": 0.3405
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3889,
+        "median": 0.3829,
+        "p95": 0.4229
+      },
+      "appearanceClusterMs": {
+        "mean": 0.4267,
+        "median": 0.4224,
+        "p95": 0.4442
+      },
+      "frameBytes": 122748,
+      "uploadedGeometryBytes": 1705368
+    },
+    {
+      "name": "gas-6000-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 0,
+      "candidatePairs": 1210596,
+      "inCutoffPairs": 215461,
+      "stepMs": {
+        "mean": 15.9797,
+        "median": 16.014,
+        "p95": 16.7029
+      },
+      "statsMs": {
+        "mean": 0.1547,
+        "median": 0.1513,
+        "p95": 0.1764
+      },
+      "packMs": {
+        "mean": 0.0444,
+        "median": 0.0404,
+        "p95": 0.0646
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.0718,
+        "median": 0.069,
+        "p95": 0.0823
+      },
+      "appearanceClusterMs": {
+        "mean": 0.0779,
+        "median": 0.0747,
+        "p95": 0.1131
+      },
+      "frameBytes": 102000,
+      "uploadedGeometryBytes": 336000
+    },
+    {
+      "name": "gas-6000-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 0,
+      "candidatePairs": 349411,
+      "inCutoffPairs": 51049,
+      "stepMs": {
+        "mean": 6.2285,
+        "median": 6.1934,
+        "p95": 6.4394
+      },
+      "statsMs": {
+        "mean": 0.1597,
+        "median": 0.1524,
+        "p95": 0.2202
+      },
+      "packMs": {
+        "mean": 0.0443,
+        "median": 0.0418,
+        "p95": 0.0574
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.0875,
+        "median": 0.0759,
+        "p95": 0.1755
+      },
+      "appearanceClusterMs": {
+        "mean": 0.0819,
+        "median": 0.0782,
+        "p95": 0.0909
+      },
+      "frameBytes": 102000,
+      "uploadedGeometryBytes": 336000
+    },
+    {
+      "name": "autocatalytic-6000-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 4685,
+      "candidatePairs": 1514529,
+      "inCutoffPairs": 519172,
+      "stepMs": {
+        "mean": 27.9268,
+        "median": 27.4232,
+        "p95": 32.2314
+      },
+      "statsMs": {
+        "mean": 0.3336,
+        "median": 0.3056,
+        "p95": 0.5082
+      },
+      "packMs": {
+        "mean": 0.1615,
+        "median": 0.1396,
+        "p95": 0.3028
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3682,
+        "median": 0.3548,
+        "p95": 0.4613
+      },
+      "appearanceClusterMs": {
+        "mean": 0.4358,
+        "median": 0.4073,
+        "p95": 0.5763
+      },
+      "frameBytes": 120740,
+      "uploadedGeometryBytes": 1572840
+    },
+    {
+      "name": "autocatalytic-6000-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 4753,
+      "candidatePairs": 384165,
+      "inCutoffPairs": 65872,
+      "stepMs": {
+        "mean": 7.6549,
+        "median": 7.5764,
+        "p95": 8.2008
+      },
+      "statsMs": {
+        "mean": 0.2752,
+        "median": 0.2672,
+        "p95": 0.3258
+      },
+      "packMs": {
+        "mean": 0.1542,
+        "median": 0.1343,
+        "p95": 0.2598
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.377,
+        "median": 0.3627,
+        "p95": 0.4424
+      },
+      "appearanceClusterMs": {
+        "mean": 0.4525,
+        "median": 0.4175,
+        "p95": 0.6547
+      },
+      "frameBytes": 121012,
+      "uploadedGeometryBytes": 1590792
+    },
+    {
+      "name": "identical-2-species-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 2,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 3801,
+      "candidatePairs": 2959037,
+      "inCutoffPairs": 2381435,
+      "stepMs": {
+        "mean": 64.1213,
+        "median": 71.1148,
+        "p95": 83.3738
+      },
+      "statsMs": {
+        "mean": 0.31,
+        "median": 0.247,
+        "p95": 0.6001
+      },
+      "packMs": {
+        "mean": 0.1482,
+        "median": 0.1183,
+        "p95": 0.2206
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3187,
+        "median": 0.305,
+        "p95": 0.4108
+      },
+      "appearanceClusterMs": {
+        "mean": 0.3475,
+        "median": 0.3384,
+        "p95": 0.4024
+      },
+      "frameBytes": 117204,
+      "uploadedGeometryBytes": 1339464
+    },
+    {
+      "name": "identical-2-species-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 2,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 5087,
+      "candidatePairs": 393303,
+      "inCutoffPairs": 157348,
+      "stepMs": {
+        "mean": 8.0178,
+        "median": 8.1144,
+        "p95": 8.5449
+      },
+      "statsMs": {
+        "mean": 0.2262,
+        "median": 0.2234,
+        "p95": 0.2428
+      },
+      "packMs": {
+        "mean": 0.1633,
+        "median": 0.1477,
+        "p95": 0.2524
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3782,
+        "median": 0.3741,
+        "p95": 0.393
+      },
+      "appearanceClusterMs": {
+        "mean": 0.4256,
+        "median": 0.4195,
+        "p95": 0.4397
+      },
+      "frameBytes": 122348,
+      "uploadedGeometryBytes": 1678968
+    },
+    {
+      "name": "identical-3-species-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 3801,
+      "candidatePairs": 2959037,
+      "inCutoffPairs": 2381435,
+      "stepMs": {
+        "mean": 66.9678,
+        "median": 74.7317,
+        "p95": 87.7747
+      },
+      "statsMs": {
+        "mean": 0.2446,
+        "median": 0.2429,
+        "p95": 0.2589
+      },
+      "packMs": {
+        "mean": 0.1234,
+        "median": 0.1124,
+        "p95": 0.1578
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3105,
+        "median": 0.3061,
+        "p95": 0.3247
+      },
+      "appearanceClusterMs": {
+        "mean": 0.3571,
+        "median": 0.3389,
+        "p95": 0.4714
+      },
+      "frameBytes": 117204,
+      "uploadedGeometryBytes": 1339464
+    },
+    {
+      "name": "identical-3-species-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 3,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 5087,
+      "candidatePairs": 393303,
+      "inCutoffPairs": 157348,
+      "stepMs": {
+        "mean": 7.908,
+        "median": 7.9757,
+        "p95": 8.247
+      },
+      "statsMs": {
+        "mean": 0.2174,
+        "median": 0.2165,
+        "p95": 0.2353
+      },
+      "packMs": {
+        "mean": 0.1493,
+        "median": 0.141,
+        "p95": 0.2501
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.4332,
+        "median": 0.3822,
+        "p95": 0.6385
+      },
+      "appearanceClusterMs": {
+        "mean": 0.4227,
+        "median": 0.4165,
+        "p95": 0.4303
+      },
+      "frameBytes": 122348,
+      "uploadedGeometryBytes": 1678968
+    },
+    {
+      "name": "identical-6-species-fixed-box",
+      "density": "fixed-box",
+      "particles": 6000,
+      "species": 6,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 3801,
+      "candidatePairs": 2959037,
+      "inCutoffPairs": 2381435,
+      "stepMs": {
+        "mean": 63.8088,
+        "median": 68.6822,
+        "p95": 87.0217
+      },
+      "statsMs": {
+        "mean": 0.245,
+        "median": 0.2382,
+        "p95": 0.2715
+      },
+      "packMs": {
+        "mean": 0.1511,
+        "median": 0.114,
+        "p95": 0.2127
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3075,
+        "median": 0.3037,
+        "p95": 0.3135
+      },
+      "appearanceClusterMs": {
+        "mean": 0.3437,
+        "median": 0.3388,
+        "p95": 0.3522
+      },
+      "frameBytes": 117204,
+      "uploadedGeometryBytes": 1339464
+    },
+    {
+      "name": "identical-6-species-constant",
+      "density": "constant",
+      "particles": 6000,
+      "species": 6,
+      "boxSize": 82.079,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 13,
+      "bonds": 5087,
+      "candidatePairs": 393303,
+      "inCutoffPairs": 157348,
+      "stepMs": {
+        "mean": 7.842,
+        "median": 7.91,
+        "p95": 8.2521
+      },
+      "statsMs": {
+        "mean": 0.2272,
+        "median": 0.2243,
+        "p95": 0.2455
+      },
+      "packMs": {
+        "mean": 0.1627,
+        "median": 0.1431,
+        "p95": 0.3248
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.3781,
+        "median": 0.3742,
+        "p95": 0.391
+      },
+      "appearanceClusterMs": {
+        "mean": 0.419,
+        "median": 0.4143,
+        "p95": 0.4292
+      },
+      "frameBytes": 122348,
+      "uploadedGeometryBytes": 1678968
+    },
+    {
+      "name": "soup-3000-radius-6",
+      "density": "fixed-box",
+      "particles": 3000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 6,
+      "actualCutoff": 6,
+      "gridSize": 8,
+      "bonds": 2619,
+      "candidatePairs": 472959,
+      "inCutoffPairs": 159525,
+      "stepMs": {
+        "mean": 7.0336,
+        "median": 7.0868,
+        "p95": 7.7376
+      },
+      "statsMs": {
+        "mean": 0.1507,
+        "median": 0.1405,
+        "p95": 0.1833
+      },
+      "packMs": {
+        "mean": 0.0868,
+        "median": 0.0719,
+        "p95": 0.1461
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.1939,
+        "median": 0.1911,
+        "p95": 0.1969
+      },
+      "appearanceClusterMs": {
+        "mean": 0.2058,
+        "median": 0.2044,
+        "p95": 0.2082
+      },
+      "frameBytes": 61476,
+      "uploadedGeometryBytes": 859416
+    },
+    {
+      "name": "soup-3000-radius-12",
+      "density": "fixed-box",
+      "particles": 3000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 12,
+      "actualCutoff": 12,
+      "gridSize": 4,
+      "bonds": 840,
+      "candidatePairs": 3257524,
+      "inCutoffPairs": 2601646,
+      "stepMs": {
+        "mean": 82.4646,
+        "median": 79.087,
+        "p95": 99.0003
+      },
+      "statsMs": {
+        "mean": 0.1031,
+        "median": 0.0899,
+        "p95": 0.1587
+      },
+      "packMs": {
+        "mean": 0.0434,
+        "median": 0.036,
+        "p95": 0.0596
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.1092,
+        "median": 0.0924,
+        "p95": 0.1647
+      },
+      "appearanceClusterMs": {
+        "mean": 0.1052,
+        "median": 0.0979,
+        "p95": 0.1227
+      },
+      "frameBytes": 54360,
+      "uploadedGeometryBytes": 389760
+    },
+    {
+      "name": "soup-3000-radius-16",
+      "density": "fixed-box",
+      "particles": 3000,
+      "species": 3,
+      "boxSize": 48,
+      "interactionRadius": 16,
+      "actualCutoff": 16,
+      "gridSize": 3,
+      "bonds": 759,
+      "candidatePairs": 4351474,
+      "inCutoffPairs": 2727130,
+      "stepMs": {
+        "mean": 81.6039,
+        "median": 81.0393,
+        "p95": 94.9221
+      },
+      "statsMs": {
+        "mean": 0.0852,
+        "median": 0.0836,
+        "p95": 0.0963
+      },
+      "packMs": {
+        "mean": 0.0348,
+        "median": 0.0324,
+        "p95": 0.0507
+      },
+      "appearanceSpeciesMs": {
+        "mean": 0.0971,
+        "median": 0.0855,
+        "p95": 0.111
+      },
+      "appearanceClusterMs": {
+        "mean": 0.1022,
+        "median": 0.0917,
+        "p95": 0.1449
+      },
+      "frameBytes": 54036,
+      "uploadedGeometryBytes": 368376
+    }
+  ]
+}

@@ -8,10 +8,10 @@ const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 createServer(async(req,res)=>{
   try{
     let path=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
-    if(path==='/emergent'){res.writeHead(302,{Location:'/emergent/'});res.end();return;}
-    if(/^\/(?:emergent\/)?\d+\/$/.test(path)){res.writeHead(308,{Location:path.slice(0,-1)});res.end();return;}
-    if(/^\/(?:emergent\/)?\d+$/.test(path))path='/index.html';
-    if(path.startsWith('/emergent/'))path=path.slice('/emergent'.length);
+    if(path==='/protoform.ing'){res.writeHead(302,{Location:'/protoform.ing/'});res.end();return;}
+    if(/^\/(?:protoform\.ing\/)?\d+\/$/.test(path)){res.writeHead(308,{Location:path.slice(0,-1)});res.end();return;}
+    if(/^\/(?:protoform\.ing\/)?\d+$/.test(path))path='/index.html';
+    if(path.startsWith('/protoform.ing/'))path=path.slice('/protoform.ing'.length);
     if(path.endsWith('/'))path+='index.html';
     const file=resolve(root,'.'+path),rel=relative(root,file);
     if(isAbsolute(rel)||rel.startsWith('..')||rel.split(/[\\/]/).some(p=>p.startsWith('.'))){res.writeHead(403);res.end('Forbidden');return;}

@@ -1,10 +1,11 @@
 {
-  "name": "protoform-ing", "version": "0.2.0", "private": true, "type": "module",
+  "name": "protoform-ing", "version": "0.3.0", "private": true, "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/serve.mjs --dist",
     "test": "node --test tests/*.test.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
     "cf:prepare": "npm run build && node scripts/prepare-cloudflare.mjs",
     "cf:check": "npm run cf:prepare && npx --yes cf@1.0.0-beta.18 deploy --prebuilt --dry-run",
     "deploy": "npm run cf:prepare && npx --yes cf@1.0.0-beta.18 deploy --prebuilt"
