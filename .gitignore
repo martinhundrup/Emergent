@@ -1,0 +1,5 @@
+dist/
+.cloudflare/
+node_modules/
+.qa/
+debug.log

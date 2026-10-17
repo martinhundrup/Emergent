@@ -1,0 +1,447 @@
+import { settingsFor, PRESETS, speciesDefaults, validateSettings } from './simulation.js';
+import { UniverseRenderer } from './renderer.js';
+import { WORLD_FIELDS, PHYSICS_FIELDS, BOND_FIELDS, CHARGE_FIELDS, ENERGY_FIELDS, SPECIES_FIELDS, REACTION_FIELDS, REACTION_GLOBAL_FIELDS, APPEARANCE_FIELDS, GUIDES } from './controls.js';
+
+const $ = id => document.getElementById(id);
+const letter = i => String.fromCharCode(65 + i);
+const appBasePath = new URL('.', import.meta.url).pathname;
+const initialParams = new URLSearchParams(window.location.search);
+const pathSeed = window.location.pathname.startsWith(appBasePath) ? window.location.pathname.slice(appBasePath.length) : '';
+const requestedSeed = /^\d+$/.test(pathSeed) ? pathSeed : initialParams.get('seed');
+const parsedSeed = requestedSeed !== null && /^\d+$/.test(requestedSeed) ? Number(requestedSeed) : NaN;
+const initialSeed = Number.isInteger(parsedSeed) && parsedSeed <= 4294967295 ? parsedSeed : 42;
+let settings = settingsFor('soup', 1200, initialSeed), worldDraft = {}, worldSizeAnchor = {}, selectedSpecies = 0, renderer, worker;
+let paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let history = [], lastSample = -1, lastFrame, lastStats, activePair = [0, 0], toastTimer, tooltipAnchor;
+let requestId = 0, restartPending = false;
+const send = data => worker?.postMessage({ ...data, requestId: ++requestId });
+
+function element(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+function toast(message) {
+  $('toast').textContent = message; $('toast').classList.add('visible');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 4500);
+}
+function fillRange(input) {
+  input.style.setProperty('--fill', `${(Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
+}
+function pending(message = 'RESTART PENDING') { restartPending = true; $('edit-status').textContent = message; $('edit-status').classList.add('pending'); }
+function liveStatus() { if (!restartPending) { $('edit-status').textContent = 'LIVE MODEL'; $('edit-status').classList.remove('pending'); } }
+function helpButton(text, name) {
+  const button = element('button', '?', 'help'); button.type = 'button'; button.dataset.help = text;
+  button.setAttribute('aria-label', `About ${name}`); return button;
+}
+function format(value, step) { return step >= 1 ? String(Math.round(value)) : Number(value).toFixed(step >= .1 ? 1 : 2); }
+function controls(containerId, fields, get, change, prefix = '') {
+  const container = typeof containerId === 'string' ? $(containerId) : containerId;
+  container.replaceChildren();
+  for (const field of fields) {
+    const id = prefix + field.key, wrapper = element('div', undefined, 'range-control');
+    const label = element('label', undefined, 'range-label'); label.htmlFor = id;
+    const caption = element('span', field.label); caption.append(helpButton(field.help, field.label));
+    const numeric = element('input', undefined, 'number-value'); numeric.type = 'number'; numeric.id = `${id}-value`;
+    numeric.min = field.min; numeric.max = field.max; numeric.step = field.step; numeric.value = get(field.key);
+    numeric.setAttribute('aria-label', `${field.label} value`);
+    label.append(caption, numeric);
+    const range = element('input'); range.type = 'range'; range.id = id; range.min = field.min; range.max = field.max; range.step = field.step; range.value = get(field.key); fillRange(range);
+    const update = (source) => {
+      const oldValue = get(field.key), raw = Number(source.value);
+      if (source.value === '' || !Number.isFinite(raw)) { numeric.value = oldValue; return; }
+      let value = Math.max(field.min, Math.min(field.max, raw));
+      if (field.step >= 1) value = Math.round(value);
+      if (change(field.key, value) === false) value = oldValue;
+      numeric.value = format(value, field.step); range.value = value; fillRange(range);
+    };
+    range.addEventListener('input', () => update(range)); numeric.addEventListener('change', () => update(numeric));
+    wrapper.append(label, range); container.append(wrapper);
+  }
+}
+function configure(patch) {
+  try {
+    settings = validateSettings({ ...settings, ...patch });
+    send({ type: 'configure', patch }); renderer?.setSettings(settings); liveStatus(); colorKey();
+    return true;
+  } catch (error) { toast(error.message); return false; }
+}
+function switchTab(name) {
+  for (const button of document.querySelectorAll('[data-tab]')) {
+    const active = button.dataset.tab === name;
+    button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
+    $(`panel-${button.dataset.tab}`).hidden = !active;
+  }
+  document.querySelector('.panel-scroll').scrollTop = 0;
+  hideTooltip();
+}
+function renderGuide() {
+  const guide = GUIDES[settings.preset];
+  $('scene-name').textContent = PRESETS[settings.preset].name;
+  $('scene-description').textContent = guide.summary;
+  $('preset-short').textContent = guide.summary;
+  $('guide-title').textContent = `Understanding ${PRESETS[settings.preset].name.toLowerCase()}`;
+  $('preset-explanation').textContent = guide.explanation;
+  $('preset-experiment').textContent = guide.experiment; $('preset-observe').textContent = guide.observe;
+  $('experiment-seed').textContent = String(settings.seed).padStart(4, '0');
+  $('world-dimension').textContent = `3D · ${settings.boxSize}³ · REFLECTIVE`;
+}
+function drawMatrix() {
+  const matrix = $('matrix'), count = settings.species.length;
+  matrix.replaceChildren(); matrix.style.gridTemplateColumns = `20px repeat(${count}, minmax(0, 1fr))`;
+  for (let row = -1; row < count; row++) for (let col = -1; col < count; col++) {
+    if (row < 0 || col < 0) {
+      const label = element('span', row === -1 && col === -1 ? '' : letter(Math.max(row, col)), 'matrix-label');
+      if (row !== col) label.style.setProperty('--species-color', settings.species[Math.max(row, col)].color);
+      matrix.append(label); continue;
+    }
+    const value = settings.matrix[row * count + col];
+    const button = element('button', `${value > 0 ? '+' : ''}${value.toFixed(count > 4 ? 1 : 2)}`, value < 0 ? 'negative' : '');
+    button.setAttribute('aria-label', `${settings.species[row].name} to ${settings.species[col].name} affinity ${value.toFixed(2)}`);
+    button.addEventListener('click', () => {
+      activePair = [row, col]; const current = settings.matrix[row * count + col];
+      $('affinity-title').textContent = `${settings.species[row].name} ↔ ${settings.species[col].name}`;
+      $('affinity').value = current; $('affinity-value').value = current.toFixed(2); fillRange($('affinity')); $('affinity-dialog').showModal();
+    }); matrix.append(button);
+  }
+}
+function speciesTabs() {
+  $('species-tabs').replaceChildren();
+  settings.species.forEach((species, i) => {
+    const button = element('button'); const dot = element('i'); dot.style.background = species.color;
+    button.append(dot, document.createTextNode(letter(i))); button.title = species.name;
+    button.setAttribute('aria-label', `Edit species ${letter(i)}: ${species.name}`); button.setAttribute('aria-pressed', String(i === selectedSpecies));
+    button.addEventListener('click', () => { selectedSpecies = i; renderSpecies(); }); $('species-tabs').append(button);
+  });
+}
+function renderSpecies() {
+  selectedSpecies = Math.min(selectedSpecies, settings.species.length - 1); speciesTabs();
+  const species = settings.species[selectedSpecies];
+  $('species-name').value = species.name; $('species-color').value = species.color;
+  $('add-species').disabled = settings.species.length >= 6; $('remove-species').disabled = settings.species.length <= 2;
+  controls('species-controls', SPECIES_FIELDS, key => settings.species[selectedSpecies][key], (key, value) => {
+    const next = structuredClone(settings.species); next[selectedSpecies][key] = value;
+    const ok = configure({ species: next }); if (ok && key === 'abundance') pending('MIXTURE ON RESTART'); return ok;
+  }, 'species-');
+  drawMatrix();
+}
+function reactionEquation(rule) {
+  const name = i => `${letter(i)} (${settings.species[i].name})`;
+  return rule.catalyst < 0 ? `${name(rule.from)} → ${name(rule.to)}` : `${letter(rule.from)} + ${letter(rule.catalyst)} → ${letter(rule.to)} + ${letter(rule.catalyst)} · ${settings.species[rule.catalyst].name} catalyzes`;
+}
+function renderReactions() {
+  const list = $('reaction-list'); list.replaceChildren();
+  $('add-reaction').disabled = settings.reactions.length >= 8;
+  if (!settings.reactions.length) list.append(element('p', 'No reaction rules. Particles retain their species. Add a rule or try the Catalytic cycle recipe.', 'reaction-empty'));
+  settings.reactions.forEach((rule, index) => {
+    const card = element('article', undefined, 'reaction-card'), title = element('div', undefined, 'reaction-title-row');
+    const name = element('input'); name.value = rule.name; name.maxLength = 48; name.setAttribute('aria-label', `Reaction ${index + 1} name`);
+    name.addEventListener('change', () => { const next = structuredClone(settings.reactions); next[index].name = name.value.trim() || `Reaction ${index + 1}`; configure({ reactions: next }); name.value = settings.reactions[index].name; });
+    const remove = element('button', '×'); remove.setAttribute('aria-label', `Remove reaction ${index + 1}`);
+    remove.addEventListener('click', () => { configure({ reactions: settings.reactions.filter((_, i) => i !== index) }); renderReactions(); });
+    title.append(name, remove); card.append(title, element('div', reactionEquation(rule), 'reaction-equation'));
+    const selects = element('div', undefined, 'reaction-selects');
+    for (const [key, caption] of [['from', 'Substrate'], ['to', 'Product'], ['catalyst', 'Required nearby catalyst']]) {
+      const label = element('label', caption), select = element('select'); select.id = `reaction-${index}-${key}`;
+      if (key === 'catalyst') { const option = element('option', 'None · spontaneous'); option.value = -1; select.append(option); }
+      settings.species.forEach((species, i) => { const option = element('option', `${letter(i)} · ${species.name}`); option.value = i; select.append(option); });
+      select.value = rule[key]; label.append(select); selects.append(label);
+      select.addEventListener('change', () => {
+        const next = structuredClone(settings.reactions); next[index][key] = Number(select.value);
+        if (next[index].from === next[index].to) {
+          next[index][key === 'from' ? 'to' : 'from'] = (Number(select.value) + 1) % settings.species.length;
+          toast('Adjusted the other species so the reaction changes the substrate.');
+        }
+        configure({ reactions: next }); renderReactions();
+      });
+    }
+    card.append(selects); const fields = element('div'); card.append(fields);
+    controls(fields, REACTION_FIELDS, key => settings.reactions[index][key], (key, value) => {
+      const next = structuredClone(settings.reactions); next[index][key] = value; return configure({ reactions: next });
+    }, `reaction-${index}-`); list.append(card);
+  });
+}
+function syncShareUrl() {
+  const url = new URL(window.location.href);
+  url.pathname = `${appBasePath}${settings.seed}`;
+  url.search = '';
+  window.history.replaceState(window.history.state, '', url);
+}
+function syncWorldDraftInputs() {
+  for (const key of ['count', 'boxSize']) {
+    $(key).value = worldDraft[key];
+    $(`${key}-value`).value = worldDraft[key];
+    fillRange($(key));
+  }
+}
+function syncSimulationSizeControl() {
+  const slider = $('simulation-size');
+  const countField = WORLD_FIELDS.find(field => field.key === 'count');
+  const boxField = WORLD_FIELDS.find(field => field.key === 'boxSize');
+  const side = worldSizeAnchor.boxSize, count = worldSizeAnchor.count;
+  slider.min = Math.max(boxField.min, Math.ceil(side * Math.cbrt(countField.min / count)));
+  slider.max = Math.min(boxField.max, Math.floor(side * Math.cbrt(countField.max / count)));
+  slider.value = worldDraft.boxSize;
+  slider.disabled = Number(slider.min) >= Number(slider.max);
+  if (slider.disabled) slider.style.setProperty('--fill', '100%'); else fillRange(slider);
+  $('simulation-size-value').textContent = `${worldDraft.boxSize}³`;
+  $('simulation-size-note').textContent = `${worldDraft.count.toLocaleString()} particles · ${worldDraft.boxSize}³ box · similar density`;
+  slider.setAttribute('aria-valuetext', `${worldDraft.boxSize} cubed, ${worldDraft.count.toLocaleString()} particles`);
+}
+function renderSettings() {
+  worldDraft = { count: settings.count, boxSize: settings.boxSize }; worldSizeAnchor = { ...worldDraft }; restartPending = false; liveStatus();
+  syncShareUrl();
+  $('preset').value = settings.preset; $('seed').value = settings.seed;
+  controls('world-reset-controls', WORLD_FIELDS, key => worldDraft[key], (key, value) => { worldDraft[key] = value; worldSizeAnchor = { ...worldDraft }; syncSimulationSizeControl(); pending(); });
+  syncSimulationSizeControl();
+  for (const [id, fields] of [['physics-controls', PHYSICS_FIELDS], ['bond-controls', BOND_FIELDS], ['charge-controls', CHARGE_FIELDS], ['energy-controls', ENERGY_FIELDS]]) {
+    controls(id, fields, key => settings[key], (key, value) => configure({ [key]: value }));
+  }
+  controls('reaction-global-controls', REACTION_GLOBAL_FIELDS, key => settings[key], (key, value) => configure({ [key]: value }));
+  renderGuide(); renderSpecies(); renderReactions(); renderer?.setSettings(settings); colorKey(); updateBondNote();
+}
+function clearHistory() { history = []; lastSample = -1; lastStats = null; lastFrame = null; $('history-line').setAttribute('d', ''); $('history-area').setAttribute('d', ''); renderer?.select(null); updateInspector(); }
+function restart(useFields = false, message = 'Experiment restarted from its seed.', candidate = settings) {
+  try {
+    let next = candidate;
+    if (useFields) {
+      if (!$('seed').value) throw new Error('Enter a whole-number seed.');
+      next = { ...candidate, ...worldDraft, seed: Number($('seed').value) };
+    }
+    settings = validateSettings(next); clearHistory(); renderSettings(); send({ type: 'reset', settings }); toast(message); return true;
+  } catch (error) { toast(error.message); return false; }
+}
+function updateStats(stats) {
+  lastStats = stats;
+  $('particle-stat').textContent = stats.particles.toLocaleString(); $('species-stat').textContent = `${settings.species.length} defined · ${stats.speciesCounts.filter(Boolean).length} present`;
+  $('bond-stat').textContent = stats.bonds.toLocaleString(); $('cluster-stat').textContent = stats.clusters.toLocaleString();
+  $('largest-stat').textContent = `Largest: ${stats.largest.toLocaleString()} particles`;
+  $('bond-age-stat').textContent = `Mean bond age: ${stats.meanBondAge.toFixed(1)} s`;
+  $('reaction-stat').textContent = stats.reactionRate.toFixed(1); $('reaction-total').textContent = `${stats.reactions.toLocaleString()} conversions in this run`;
+  $('bond-turnover').textContent = `${stats.bondsFormed.toLocaleString()} formed · ${stats.bondsBroken.toLocaleString()} broken`;
+  $('energy-stat').textContent = `Mean kinetic energy: ${stats.energy.toFixed(2)}`;
+  $('stored-energy-stat').textContent = `Stored energy: ${stats.meanEnergy.toFixed(2)} / 10`;
+  $('active-stat').textContent = `Powered: ${Math.round(stats.activeFraction * 100)}% · alignment: ${Math.round(stats.polarOrder * 100)}%`;
+  $('sim-rate').textContent = Math.round(stats.stepsPerSecond ?? 0);
+  $('step-ms').textContent = (stats.stepMs ?? 0).toFixed(1);
+  $('sim-time').textContent = `${String(Math.floor(stats.time / 60)).padStart(2, '0')}:${(stats.time % 60).toFixed(1).padStart(4, '0')}`;
+  {
+    let entropy = 0; for (const count of stats.speciesCounts) if (count) { const p = count / stats.particles; entropy -= p * Math.log(p); }
+    const sample = { time: stats.time, bonded: stats.bonded / stats.particles, largest: stats.largest / stats.particles, energy: stats.meanEnergy, reactions: stats.reactionRate, diversity: entropy / Math.log(settings.species.length) };
+    if (history.at(-1)?.time === stats.time) history[history.length - 1] = sample; else history.push(sample);
+    lastSample = stats.time; history = history.filter(item => item.time >= stats.time - 120);
+  }
+  drawChart(); renderPopulation(stats); updateBondNote(); updateInspector();
+}
+function drawChart() {
+  if (!lastStats || !history.length) return;
+  const metric = $('chart-metric').value, now = lastStats.time;
+  const maximum = metric === 'energy' ? 10 : metric === 'reactions' ? Math.max(1, ...history.map(item => item.reactions)) : 1;
+  const display = value => metric === 'energy' ? value.toFixed(2) : metric === 'reactions' ? `${value.toFixed(1)} / s` : `${Math.round(value * 100)}%`;
+  $('chart-value').textContent = display(history.at(-1)[metric]); $('chart-max').textContent = display(maximum);
+  $('history-chart').setAttribute('aria-label', `${$('chart-metric').selectedOptions[0].textContent} over the last 120 simulation seconds; current ${display(history.at(-1)[metric])}`);
+  const path = history.map((item, i) => `${i ? 'L' : 'M'}${(800 * (1 - (now - item.time) / 120)).toFixed(1)},${(85 - item[metric] / maximum * 80).toFixed(1)}`).join(' ');
+  $('history-line').setAttribute('d', path);
+  $('history-area').setAttribute('d', `${path} L800,85 L${(800 * (1 - (now - history[0].time) / 120)).toFixed(1)},85 Z`);
+}
+function renderPopulation(stats) {
+  $('population-bar').replaceChildren(); $('population-legend').replaceChildren();
+  settings.species.forEach((species, i) => {
+    const count = stats.speciesCounts[i] ?? 0, part = element('span'); part.style.background = species.color; part.style.width = `${count / stats.particles * 100}%`; part.title = `${species.name}: ${count}`; $('population-bar').append(part);
+    const label = element('span'), dot = element('i'); dot.style.background = species.color;
+    label.append(dot, document.createTextNode(`${letter(i)} · ${species.name}`), element('b', count.toLocaleString())); $('population-legend').append(label);
+  });
+}
+function updateBondNote() {
+  const count = lastFrame ? lastFrame.bonds.length / 2 : 0, visible = $('show-bonds').checked;
+  const unbondedGas = settings.preset === 'gas' && settings.bondStrength === 0 && settings.species.every(item => item.valence === 0) && settings.matrix.every(value => value === 0);
+  $('visible-bond-count').textContent = visible ? count.toLocaleString() : 'hidden';
+  $('bond-explanation').textContent = !visible ? `${count.toLocaleString()} physical bonds exist; drawing is hidden. Toggle Show bonds to reveal them.` : count ? `${count.toLocaleString()} bonds drawn. Bond network reveals connectivity; click a particle to inspect its connections.` : unbondedGas ? 'Inert gas has no bonds: valence, affinity, and bond strength are zero. See the preset explanation below.' : 'No bonds yet. Formation needs nearby compatible species, spare valence, and nonzero species/global bond strength.';
+}
+function updateInspector() {
+  const id = renderer?.selectedId;
+  if (id === null || id === undefined || !lastFrame || id >= lastFrame.types.length) { $('inspector').textContent = 'No particle selected.'; $('selection-hint').hidden = true; return; }
+  const species = settings.species[lastFrame.types[id]]; if (!species) return;
+  let bonds = 0; for (const endpoint of lastFrame.bonds) if (endpoint === id) bonds++;
+  const values = [['Particle', `#${id + 1}`], ['Species', `${letter(lastFrame.types[id])} · ${species.name}`], ['Bonds / valence', `${bonds} / ${species.valence}`], ['Stored energy', `${lastFrame.energies[id].toFixed(2)} / 10`], ['Mass / charge', `${species.mass} / ${species.charge}`], ['Position', Array.from(lastFrame.positions.subarray(id * 3, id * 3 + 3)).map(v => v.toFixed(1)).join(', ')]];
+  const list = element('dl'); for (const [key, value] of values) list.append(element('dt', key), element('dd', value)); $('inspector').replaceChildren(list);
+  $('selection-hint').textContent = `#${id + 1} · ${species.name} · ${bonds} bonds · E ${lastFrame.energies[id].toFixed(1)}`; $('selection-hint').hidden = false;
+}
+function colorKey() {
+  const gradient = settings.energyGradient > 0 && settings.energyInput > 0 ? ' With a supply gradient, the amber +X boundary is richer and the blue −X boundary is poorer.' : '';
+  $('color-key').textContent = ($('color-mode').value === 'energy' ? 'Energy: blue / empty → warm / full (0–10). Stored energy powers activity and reactions.' : $('color-mode').value === 'cluster' ? 'Each bonded component has a color. Free particles are gray; a merger or split can change component colors.' : 'Species colors match the population legend and the Species editor.') + gradient;
+}
+function setPaused(value) {
+  paused = value; send({ type: 'pause', value });
+  $('play').replaceChildren(document.createTextNode(value ? '▶ ' : 'Ⅱ '), element('span', value ? 'Resume' : 'Pause'));
+  $('play').setAttribute('aria-label', value ? 'Resume simulation' : 'Pause simulation');
+  $('status').replaceChildren(element('i'), document.createTextNode(value ? ' PAUSED' : ' RUNNING'));
+}
+function showTooltip(anchor) {
+  if (!anchor?.dataset.help) return; hideTooltip(); tooltipAnchor = anchor;
+  const tooltip = $('tooltip'); tooltip.textContent = anchor.dataset.help; tooltip.hidden = false; anchor.setAttribute('aria-describedby', 'tooltip');
+  const rect = anchor.getBoundingClientRect(), box = tooltip.getBoundingClientRect();
+  tooltip.style.left = `${Math.max(12, Math.min(innerWidth - box.width - 12, rect.left - box.width / 2))}px`;
+  tooltip.style.top = `${rect.bottom + box.height + 14 < innerHeight ? rect.bottom + 10 : Math.max(12, rect.top - box.height - 10)}px`;
+}
+function hideTooltip() { tooltipAnchor?.removeAttribute('aria-describedby'); tooltipAnchor = null; $('tooltip').hidden = true; }
+
+for (const [key, preset] of Object.entries(PRESETS)) { const option = element('option', preset.name); option.value = key; $('preset').append(option); }
+$('chart-metric').querySelector('[value="diversity"]').textContent = 'Mixture diversity';
+$('chart-metric').parentElement.append(helpButton('Mixture diversity is normalized Shannon entropy of the configured species counts: 0% means one species is present; 100% means equal counts of every configured species. It does not measure newly evolved species or biological complexity. Reaction rate counts conversions per simulation second over the last two seconds.', 'measurement interpretation'));
+$('active-stat').title = 'Powered is the fraction of particles with propulsion and stored energy. Alignment is the heading agreement of all powered particles (0–100%), not a measure of bond stability.';
+const researchDownload = element('a', 'Download research notes ↧', 'button secondary');
+researchDownload.href = './RESEARCH.md'; researchDownload.download = 'protoform.ing-research.md';
+document.querySelector('.source-list').after(researchDownload);
+renderSettings();
+const appearance = { particleScale: .72, bondWidth: 2.2 };
+function renderAppearanceControls() {
+  controls('appearance-controls', APPEARANCE_FIELDS, key => appearance[key], (key, value) => { appearance[key] = value; if (renderer) renderer[key] = value; });
+}
+renderAppearanceControls();
+const luckyInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+const luckyChoice = values => values[luckyInt(0, values.length - 1)];
+function luckyField(field) {
+  const steps = Math.round((field.max - field.min) / field.step);
+  return Number((field.min + luckyInt(0, steps) * field.step).toFixed(4));
+}
+function luckySettings() {
+  const count = luckyInt(2, 6);
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  const next = settingsFor('lucky', luckyField(WORLD_FIELDS[0]), seed);
+  for (const field of [...WORLD_FIELDS.slice(1), ...PHYSICS_FIELDS, ...BOND_FIELDS, ...CHARGE_FIELDS, ...ENERGY_FIELDS, ...REACTION_GLOBAL_FIELDS]) next[field.key] = luckyField(field);
+  const names = ['Aster', 'Cinder', 'Drift', 'Ember', 'Flux', 'Glimmer', 'Halo', 'Ion', 'Mote', 'Nova', 'Pulse', 'Quill'];
+  next.species = Array.from({ length: count }, (_, index) => {
+    const item = speciesDefaults(index);
+    for (const field of SPECIES_FIELDS) item[field.key] = luckyField(field);
+    item.name = `${luckyChoice(names)} ${letter(index)}`;
+    item.color = settings.species[index]?.color ?? item.color;
+    return item;
+  });
+  if (next.species.every(item => item.abundance === 0)) next.species[0].abundance = 1;
+  next.matrix = Array(count * count).fill(0);
+  for (let row = 0; row < count; row++) for (let col = row; col < count; col++) {
+    const affinity = luckyInt(-20, 20) / 20;
+    next.matrix[row * count + col] = next.matrix[col * count + row] = affinity;
+  }
+  next.reactions = Array.from({ length: luckyInt(1, 8) }, (_, index) => {
+    const from = luckyInt(0, count - 1), to = (from + luckyInt(1, count - 1)) % count;
+    const rule = { name: `${letter(from)} to ${letter(to)} ${index + 1}`, from, to, catalyst: luckyInt(-1, count - 1) };
+    for (const field of REACTION_FIELDS) rule[field.key] = luckyField(field);
+    return rule;
+  });
+  return validateSettings(next);
+}
+function randomizeModel() {
+  if (!renderer || !worker) return;
+  try {
+    restart(false, 'New model rules sampled. Your view and playback settings are preserved.', luckySettings());
+  } catch (error) { toast(error.message); }
+}
+$('lucky').addEventListener('click', randomizeModel);
+try {
+  renderer = new UniverseRenderer($('universe')); renderer.setSettings(settings);
+  renderer.onSelect = () => { updateInspector(); if (renderer.selectedId !== null) switchTab('view'); };
+  worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'frame') { lastFrame = data; renderer.update(data); if (data.stats) updateStats(data.stats); else updateInspector(); }
+    else if (data.type === 'settings' && data.imported) {
+      settings = data.settings; clearHistory(); setPaused(true); renderSettings();
+      toast(data.migration?.prunedBonds ? `Legacy experiment loaded and paused. Removed ${data.migration.prunedBonds} bonds incompatible with its saved rules.` : 'Experiment loaded and paused.');
+    } else if (data.type === 'settings' && data.reason === 'sync') {
+      settings = data.settings; renderSettings();
+    } else if (data.type === 'export') {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data.snapshot)], { type: 'application/json' })), link = element('a');
+      link.href = url; link.download = `protoform.ing-${settings.seed}-${data.snapshot.ticks}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); toast('Complete experiment saved to your downloads.');
+    } else if (data.type === 'error') { toast(data.message); if (['configure', 'reset'].includes(data.action)) send({ type: 'sync' }); }
+  };
+  worker.onerror = () => { setPaused(true); $('scene-error').hidden = false; $('scene-error').textContent = 'The simulation worker stopped. Save your current experiment if possible, then reload the app.'; };
+  send({ type: 'init', settings }); setPaused(paused); send({ type: 'visibility', value: !document.hidden });
+} catch (error) {
+  $('scene-error').hidden = false; $('scene-error').textContent = error.message; $('status').textContent = 'UNAVAILABLE';
+  for (const id of ['play', 'step', 'reset', 'apply-world', 'new-seed', 'lucky', 'export-button', 'import-button']) $(id).disabled = true;
+}
+let lastTime = performance.now(), fpsStart = lastTime, frames = 0;
+function animate(time) {
+  const dt = Math.min((time - lastTime) / 1000, .1); lastTime = time;
+  if (!document.hidden && renderer) { renderer.draw(dt); frames++; if (time - fpsStart >= 1000) { $('fps').textContent = Math.round(frames * 1000 / (time - fpsStart)); frames = 0; fpsStart = time; } }
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+document.addEventListener('visibilitychange', () => { send({ type: 'visibility', value: !document.hidden }); lastTime = performance.now(); fpsStart = lastTime; frames = 0; });
+$('universe').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); $('scene-error').hidden = false; $('scene-error').textContent = 'Graphics were interrupted. Save the experiment, then reload to restore the view.'; });
+$('play').addEventListener('click', () => setPaused(!paused));
+$('step').addEventListener('click', () => { setPaused(true); send({ type: 'step' }); });
+$('reset').addEventListener('click', () => restart()); $('apply-world').addEventListener('click', () => restart(true)); $('apply-mixture').addEventListener('click', () => restart(true));
+$('speed').addEventListener('change', () => send({ type: 'speed', value: Number($('speed').value) }));
+$('seed').addEventListener('input', () => pending());
+$('simulation-size').addEventListener('input', () => {
+  const side = Number($('simulation-size').value);
+  worldDraft.boxSize = side;
+  const countField = WORLD_FIELDS.find(field => field.key === 'count');
+  worldDraft.count = Math.max(countField.min, Math.min(countField.max, Math.round(worldSizeAnchor.count * (side / worldSizeAnchor.boxSize) ** 3 / countField.step) * countField.step));
+  syncWorldDraftInputs(); syncSimulationSizeControl(); pending();
+});
+$('simulation-size').addEventListener('change', () => { worldSizeAnchor = { ...worldDraft }; syncSimulationSizeControl(); });
+$('new-seed').addEventListener('click', () => { $('seed').value = crypto.getRandomValues(new Uint32Array(1))[0]; restart(true); });
+$('preset').addEventListener('change', () => { if ($('preset').value === 'lucky') randomizeModel(); else { settings = settingsFor($('preset').value, settings.count, settings.seed); restart(false, `${PRESETS[settings.preset].name} started.`); } });
+document.querySelectorAll('[data-tab]').forEach(button => {
+  button.addEventListener('click', () => switchTab(button.dataset.tab));
+  button.addEventListener('keydown', event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const tabs = [...document.querySelectorAll('[data-tab]')], index = tabs.indexOf(button); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length; switchTab(tabs[next].dataset.tab); tabs[next].focus(); });
+});
+$('species-name').addEventListener('change', () => { const next = structuredClone(settings.species); next[selectedSpecies].name = $('species-name').value.trim() || `Species ${letter(selectedSpecies)}`; if (configure({ species: next })) { speciesTabs(); drawMatrix(); renderReactions(); } $('species-name').value = settings.species[selectedSpecies].name; });
+$('species-color').addEventListener('input', () => { const next = structuredClone(settings.species); next[selectedSpecies].color = $('species-color').value; configure({ species: next }); speciesTabs(); drawMatrix(); });
+$('add-species').addEventListener('click', () => {
+  const count = settings.species.length; if (count >= 6) return;
+  const matrix = Array((count + 1) ** 2).fill(0); for (let a = 0; a < count; a++) for (let b = 0; b < count; b++) matrix[a * (count + 1) + b] = settings.matrix[a * count + b]; matrix[matrix.length - 1] = .6;
+  const next = { ...settings, species: [...settings.species, { ...speciesDefaults(count), abundance: 20 }], matrix };
+  if (restart(true, `Species ${letter(count)} added. World restarted.`, next)) { selectedSpecies = count; renderSpecies(); }
+});
+$('remove-species').addEventListener('click', () => {
+  const count = settings.species.length, index = selectedSpecies; if (count <= 2) return;
+  const species = settings.species.filter((_, i) => i !== index); if (!species.some(item => item.abundance > 0)) { toast('Give another species a nonzero mixture weight first.'); return; }
+  const matrix = []; for (let a = 0; a < count; a++) for (let b = 0; b < count; b++) if (a !== index && b !== index) matrix.push(settings.matrix[a * count + b]);
+  const remap = i => i > index ? i - 1 : i;
+  const reactions = settings.reactions.filter(rule => ![rule.from, rule.to, rule.catalyst].includes(index)).map(rule => ({ ...rule, from: remap(rule.from), to: remap(rule.to), catalyst: remap(rule.catalyst) }));
+  restart(true, 'Species and its reaction rules removed. World restarted.', { ...settings, species, matrix, reactions });
+});
+$('add-reaction').addEventListener('click', () => { if (settings.reactions.length >= 8) return; configure({ reactions: [...settings.reactions, { name: `Reaction ${settings.reactions.length + 1}`, from: 0, to: 1, catalyst: 1, rate: .5, activationEnergy: .2, energyCost: .5 }] }); renderReactions(); });
+$('affinity').addEventListener('input', () => { const value = Number($('affinity').value), [a, b] = activePair, count = settings.species.length, matrix = [...settings.matrix]; matrix[a * count + b] = value; matrix[b * count + a] = value; configure({ matrix }); $('affinity-value').value = value.toFixed(2); fillRange($('affinity')); drawMatrix(); });
+for (const mode of ['particles', 'bonds']) $(`view-${mode}`).addEventListener('click', () => { if (renderer) renderer.viewMode = mode; if (mode === 'bonds') { $('show-bonds').checked = true; if (renderer) renderer.showBonds = true; } for (const key of ['particles', 'bonds']) { $(`view-${key}`).classList.toggle('active', key === mode); $(`view-${key}`).setAttribute('aria-pressed', String(key === mode)); } updateBondNote(); });
+$('show-bonds').addEventListener('change', () => { if (renderer) renderer.showBonds = $('show-bonds').checked; updateBondNote(); });
+$('show-bounds').addEventListener('change', () => { if (renderer) renderer.showBounds = $('show-bounds').checked; });
+$('color-mode').addEventListener('change', () => { if (renderer) renderer.colorMode = $('color-mode').value; colorKey(); });
+$('chart-metric').addEventListener('change', drawChart);
+$('clear-selection').addEventListener('click', () => renderer?.select(null));
+$('reset-camera').addEventListener('click', () => renderer?.resetCamera());
+$('rotate-camera').addEventListener('click', () => { if (renderer) { renderer.autoRotate = !renderer.autoRotate; $('rotate-camera').setAttribute('aria-pressed', String(renderer.autoRotate)); } });
+$('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else if ($('chamber').requestFullscreen) await $('chamber').requestFullscreen(); else toast('Fullscreen is unavailable in this browser.'); } catch { toast('Fullscreen is unavailable in this browser.'); } });
+$('about-button').addEventListener('click', () => $('about-dialog').showModal());
+document.querySelectorAll('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
+$('export-button').addEventListener('click', () => send({ type: 'export' })); $('import-button').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', async () => { const file = $('import-file').files[0]; if (!file) return; try { if (file.size > 10_000_000) throw new Error('Experiment files must be smaller than 10 MB.'); send({ type: 'import', snapshot: JSON.parse(await file.text()) }); } catch (error) { toast(error instanceof SyntaxError ? 'That file is not valid JSON.' : error.message); } $('import-file').value = ''; });
+document.addEventListener('pointerover', event => { const help = event.target.closest('.help'); if (help) showTooltip(help); });
+document.addEventListener('pointerout', event => { if (event.target.closest('.help') && !event.target.closest('.help').contains(event.relatedTarget)) hideTooltip(); });
+document.addEventListener('focusin', event => {
+  if (!event.target.matches('.help')) return;
+  const anchor = event.target;
+  showTooltip(anchor);
+  // Keyboard focus can scroll a nested control panel. Position the help after
+  // that scroll has settled, since the scroll listener dismisses stale tooltips.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (document.activeElement === anchor) showTooltip(anchor);
+  }));
+});
+document.addEventListener('focusout', event => { if (event.target.matches('.help')) hideTooltip(); });
+document.addEventListener('click', event => { const help = event.target.closest('.help'); if (help) { event.preventDefault(); showTooltip(help); } else hideTooltip(); });
+document.addEventListener('scroll', hideTooltip, true); window.addEventListener('resize', hideTooltip);
+const controlsPanel = document.querySelector('.controls');
+function sizeControlsPanel() {
+  controlsPanel.style.setProperty('--controls-top', `${Math.max(16, controlsPanel.getBoundingClientRect().top)}px`);
+}
+window.addEventListener('scroll', sizeControlsPanel, { passive: true });
+window.addEventListener('resize', sizeControlsPanel);
+sizeControlsPanel();
+document.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); if (event.target.closest('input,select,button,dialog') || document.querySelector('dialog[open]') || !worker) return; if (event.code === 'Space') { event.preventDefault(); setPaused(!paused); } if (event.key === 'ArrowRight') { event.preventDefault(); setPaused(true); send({ type: 'step' }); } });
